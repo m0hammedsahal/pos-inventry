@@ -1,0 +1,122 @@
+/**
+ * Browser printing for thermal receipts.
+ *
+ * The receipt is rendered into a hidden, isolated iframe that contains ONLY the
+ * receipt text, then that iframe is printed. This is what makes printing work
+ * on Android POS handhelds where popup windows are blocked and where
+ * `window.print()` would print the whole application page instead.
+ */
+
+const escapeHtml = (text: string): string =>
+  text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+const isSafeLogo = (url: string | undefined | null): url is string => !!url && /^data:image\/(png|jpe?g|webp);base64,/i.test(url);
+
+const documentHtml = (title: string, text: string, widthMm: number, logoUrl?: string | null): string => `<!doctype html>
+<html><head><meta charset="utf-8" /><title>${escapeHtml(title)}</title>
+<style>
+  @page { size: ${widthMm}mm auto; margin: 0; }
+  html, body { margin: 0; padding: 0; background: #fff; }
+  .logo { width: ${widthMm}mm; padding: 2mm 1mm 0; text-align: center; box-sizing: border-box; }
+  .logo img { max-width: 100%; max-height: 28mm; object-fit: contain; filter: grayscale(1) contrast(1.4); }
+  pre {
+    margin: 0;
+    padding: 2mm 1mm;
+    width: ${widthMm}mm;
+    font-family: "Courier New", "DejaVu Sans Mono", ui-monospace, monospace;
+    font-size: ${widthMm >= 80 ? 14 : 13}px;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+    line-height: 1.35;
+    color: #000;
+    white-space: pre;
+    -webkit-font-smoothing: none;
+    font-smooth: never;
+    text-rendering: geometricPrecision;
+    -webkit-text-stroke: 0.28px #000;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+</style></head>
+<body>${isSafeLogo(logoUrl) ? `<div class="logo"><img src="${logoUrl}" alt="" /></div>` : ""}<pre>${escapeHtml(text)}</pre></body></html>`;
+
+/** Prints plain receipt text. Returns false when the browser blocked printing. */
+export function printReceiptText(
+  text: string,
+  opts: { title?: string; widthMm?: 58 | 80; logoUrl?: string | null | undefined } = {},
+): boolean {
+  if (typeof window === "undefined" || typeof document === "undefined") return false;
+  const title = opts.title ?? "Receipt";
+  const widthMm = opts.widthMm ?? 58;
+  const html = documentHtml(title, text, widthMm, opts.logoUrl);
+
+  try {
+    const existing = document.getElementById("receipt-print-frame");
+    if (existing) existing.remove();
+
+    const frame = document.createElement("iframe");
+    frame.id = "receipt-print-frame";
+    frame.setAttribute("aria-hidden", "true");
+    frame.style.cssText =
+      "position:fixed;left:-10000px;top:0;width:400px;height:600px;border:0;visibility:hidden;";
+    document.body.appendChild(frame);
+
+    const doc = frame.contentDocument;
+    const win = frame.contentWindow;
+    if (!doc || !win) {
+      frame.remove();
+      return printInPopup(html);
+    }
+
+    doc.open();
+    doc.write(html);
+    doc.close();
+
+    const run = () => {
+      try {
+        win.focus();
+        win.print();
+      } catch {
+        printInPopup(html);
+      }
+      // Keep the frame alive long enough for the print dialog to read it.
+      window.setTimeout(() => frame.remove(), 60000);
+    };
+
+    // Wait for the logo (if any) to finish loading so it is part of the printout.
+    const whenReady = () => {
+      const img = doc.querySelector("img");
+      if (img && !img.complete) {
+        let done = false;
+        const go = () => {
+          if (done) return;
+          done = true;
+          window.setTimeout(run, 50);
+        };
+        img.addEventListener("load", go);
+        img.addEventListener("error", go);
+        window.setTimeout(go, 1500);
+      } else {
+        window.setTimeout(run, 50);
+      }
+    };
+
+    if (doc.readyState === "complete") whenReady();
+    else frame.onload = whenReady;
+
+    return true;
+  } catch {
+    return printInPopup(html);
+  }
+}
+
+function printInPopup(html: string): boolean {
+  const win = window.open("", "_blank", "width=420,height=760");
+  if (!win) return false;
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
+  win.focus();
+  win.setTimeout(() => win.print(), 200);
+  return true;
+}
