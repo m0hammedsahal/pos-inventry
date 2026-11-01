@@ -61,11 +61,17 @@ export interface PosSettings {
 }
 
 export interface PrinterSettings {
-  type: "thermal" | "browser";
+  /** bluetooth = Web Bluetooth (phone/tablet/PC), thermal = local print bridge, browser = device print dialog */
+  type: "bluetooth" | "thermal" | "browser";
   width: "58" | "80";
+  /** Only used by the local print bridge */
   connection: "usb" | "bluetooth" | "network";
   name: string;
   bridgeUrl: string;
+  /** Print the Kitchen Order Ticket on the same slip, below the bill */
+  printKot?: boolean;
+  /** Print as soon as a sale is completed */
+  autoPrint?: boolean;
 }
 
 export interface AllSettings {
@@ -82,6 +88,8 @@ export interface ReceiptData {
   cashierName: string;
   customerName?: string | null;
   customerGstin?: string | null;
+  /** Table / token number, shown on the bill and the KOT */
+  tableNo?: string | null;
   items: {
     name: string;
     quantity: number;

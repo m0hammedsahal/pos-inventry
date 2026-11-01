@@ -17,7 +17,15 @@ export const DEFAULT_SETTINGS: AllSettings = {
   invoice: { prefix: "INV", nextNumber: 1, receiptWidth: "58", footer: "Thank you! Visit Again!", showGst: true },
   tax: { defaultGstRate: 5, shopState: "Kerala" },
   pos: { maxCashierDiscountPercent: 10, allowNegativeStock: false },
-  printer: { type: "thermal", width: "58", connection: "usb", name: "POS-58", bridgeUrl: "http://localhost:8765" },
+  printer: {
+    type: "bluetooth",
+    width: "58",
+    connection: "usb",
+    name: "POS-58",
+    bridgeUrl: "http://localhost:8765",
+    printKot: true,
+    autoPrint: false,
+  },
 };
 
 import { getActiveRestaurantId } from "@/lib/restaurant";

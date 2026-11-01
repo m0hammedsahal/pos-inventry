@@ -49,7 +49,12 @@ export function printReceiptText(
   const title = opts.title ?? "Receipt";
   const widthMm = opts.widthMm ?? 58;
   const html = documentHtml(title, text, widthMm, opts.logoUrl);
+  return printHtml(html);
+}
 
+/** Prints an HTML document through a hidden iframe (falls back to a popup). */
+function printHtml(html: string): boolean {
+  if (typeof window === "undefined" || typeof document === "undefined") return false;
   try {
     const existing = document.getElementById("receipt-print-frame");
     if (existing) existing.remove();
@@ -119,4 +124,48 @@ function printInPopup(html: string): boolean {
   win.focus();
   win.setTimeout(() => win.print(), 200);
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// Layout-based printing (bill + KOT with bold / large text and a smaller logo)
+// ---------------------------------------------------------------------------
+import type { Block } from "@/lib/receiptLayout";
+
+function blocksHtml(blocks: Block[], widthMm: number, cols: number): string {
+  const body = blocks
+    .map((b) => {
+      if (b.kind === "text") {
+        const cls = ["ln", b.align === "center" ? "c" : b.align === "right" ? "r" : "", b.bold ? "b" : "", b.size ?? "normal"]
+          .filter(Boolean)
+          .join(" ");
+        return `<div class="${cls}">${escapeHtml(b.text) || "&nbsp;"}</div>`;
+      }
+      if (b.kind === "rule") return `<div class="ln">${escapeHtml((b.char ?? "-").repeat(cols))}</div>`;
+      if (b.kind === "feed") return `<div style="height:${b.lines * 1.35}em"></div>`;
+      if (b.kind === "logo" && isSafeLogo(b.src)) return `<div class="logo"><img src="${b.src}" alt="" /></div>`;
+      return "";
+    })
+    .join("\n");
+  const font = widthMm >= 80 ? 10.8 : 10.5;
+  return `<!doctype html>
+<html><head><meta charset="utf-8" /><title>Receipt</title>
+<style>
+  @page { size: ${widthMm}mm auto; margin: 0; }
+  html, body { margin: 0; padding: 0; background: #fff; }
+  .slip { width: ${widthMm}mm; box-sizing: border-box; padding: 2mm 2mm 4mm; color: #000;
+    font-family: "Courier New", "DejaVu Sans Mono", ui-monospace, monospace; font-size: ${font}px; line-height: 1.35;
+    print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .ln { white-space: pre; font-weight: 600; }
+  .ln.b { font-weight: 800; }
+  .ln.c { text-align: center; } .ln.r { text-align: right; }
+  .ln.tall { transform: scaleY(2); transform-origin: left top; margin-bottom: 1.35em; font-weight: 800; }
+  .ln.big { font-size: ${font * 2}px; line-height: 1.2; font-weight: 800; }
+  .logo { text-align: center; padding: 1mm 0 2mm; }
+  .logo img { max-width: ${widthMm >= 80 ? 48 : 52}%; max-height: 18mm; object-fit: contain; filter: grayscale(1) contrast(1.5); }
+</style></head><body><div class="slip">${body}</div></body></html>`;
+}
+
+/** Prints the slip layout through the device print dialog. Returns false when the browser blocked it. */
+export function printBlocks(blocks: Block[], opts: { widthMm: 58 | 80; cols: number }): boolean {
+  return printHtml(blocksHtml(blocks, opts.widthMm, opts.cols));
 }

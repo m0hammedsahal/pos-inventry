@@ -21,7 +21,7 @@ import {
   readCachedSettings,
   saveSettingsSection,
 } from "@/services/settingsService";
-import { getPrinterStatus, openCashDrawer, testPrinter } from "@/services/printerService";
+import { PrinterSettingsPanel } from "@/components/PrinterSettingsPanel";
 import { LOGO_ACCEPT, fileToLogoDataUrl } from "@/lib/logo";
 import { DEFAULT_BILL_LOGO } from "@/lib/defaultLogo";
 import type { AllSettings } from "@/types";
@@ -54,11 +54,6 @@ function SettingsPage() {
     if (remote) setDraft(remote);
   }, [remote]);
 
-  const { data: printerStatus } = useQuery({
-    queryKey: ["printer-status", draft.printer.bridgeUrl, draft.printer.type],
-    queryFn: () => getPrinterStatus(draft.printer),
-    refetchInterval: 30000,
-  });
 
   const save = useMutation({
     mutationFn: async (section: keyof AllSettings) => {
@@ -240,20 +235,6 @@ function SettingsPage() {
                 <Field label="Invoice prefix">
                   <Input value={draft.invoice.prefix} onChange={(e) => set("invoice", { prefix: e.target.value })} />
                 </Field>
-                <Field label="Receipt width">
-                  <Select
-                    value={draft.invoice.receiptWidth}
-                    onValueChange={(v) => set("invoice", { receiptWidth: v as "58" | "80" })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="58">58 mm</SelectItem>
-                      <SelectItem value="80">80 mm</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </Field>
                 <div className="sm:col-span-2">
                   <Field label="Receipt footer">
                     <Input value={draft.invoice.footer} onChange={(e) => set("invoice", { footer: e.target.value })} />
@@ -288,92 +269,13 @@ function SettingsPage() {
           </TabsContent>
 
           <TabsContent value="printer">
-            <Card className="space-y-3 p-4">
-              <div className="flex items-center gap-2 text-sm">
-                Printer status:
-                <Badge variant={printerStatus?.state === "online" ? "secondary" : "destructive"}>
-                  {printerStatus?.state ?? "unknown"}
-                </Badge>
-                <span className="text-muted-foreground">{printerStatus?.message}</span>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Field label="Printing mode">
-                  <Select
-                    value={draft.printer.type}
-                    onValueChange={(v) => set("printer", { type: v as "thermal" | "browser" })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="thermal">Thermal printer (local bridge)</SelectItem>
-                      <SelectItem value="browser">Browser print dialog</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </Field>
-                <Field label="Connection">
-                  <Select
-                    value={draft.printer.connection}
-                    onValueChange={(v) => set("printer", { connection: v as "usb" | "bluetooth" | "network" })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="usb">USB</SelectItem>
-                      <SelectItem value="bluetooth">Bluetooth</SelectItem>
-                      <SelectItem value="network">Network</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </Field>
-                <Field label="Printer name">
-                  <Input value={draft.printer.name} onChange={(e) => set("printer", { name: e.target.value })} />
-                </Field>
-                <Field label="Bridge URL">
-                  <Input
-                    value={draft.printer.bridgeUrl}
-                    onChange={(e) => set("printer", { bridgeUrl: e.target.value })}
-                  />
-                </Field>
-                <Field label="Paper width">
-                  <Select
-                    value={draft.printer.width}
-                    onValueChange={(v) => set("printer", { width: v as "58" | "80" })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="58">58 mm</SelectItem>
-                      <SelectItem value="80">80 mm</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </Field>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button disabled={!isAdmin || save.isPending} onClick={() => save.mutate("printer")}>
-                  Save printer settings
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={async () => {
-                    const res = await testPrinter(draft.printer);
-                    res.ok ? toast.success("Test print sent") : toast.error(res.message);
-                  }}
-                >
-                  Test print
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={async () => {
-                    const res = await openCashDrawer(draft.printer);
-                    res.ok ? toast.success("Drawer opened") : toast.error(res.message);
-                  }}
-                >
-                  Open cash drawer
-                </Button>
-              </div>
-            </Card>
+            <PrinterSettingsPanel
+              draft={draft}
+              canEdit={isAdmin}
+              saving={save.isPending}
+              onChange={(patch) => set("printer", patch)}
+              onSave={() => save.mutate("printer")}
+            />
           </TabsContent>
         </Tabs>
       </div>

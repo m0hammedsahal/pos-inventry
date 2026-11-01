@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Plus } from "lucide-react";
+import { Plus, Tags, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { explainError } from "@/lib/errors";
 import { supabase } from "@/integrations/supabase/client";
@@ -13,7 +13,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatCurrency } from "@/lib/format";
 import { GST_RATES } from "@/lib/tax";
@@ -57,6 +57,8 @@ function MenuPage() {
   const { data: me } = useMyProfile();
   const [term, setTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [catsOpen, setCatsOpen] = useState(false);
+  const [newCategory, setNewCategory] = useState("");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Product | null>(null);
   const [form, setForm] = useState({ ...emptyForm });
@@ -119,6 +121,48 @@ function MenuPage() {
       toast.error(e.message.includes("duplicate") ? "Another menu item already uses that item code" : e.message),
   });
 
+  const addCategory = useMutation({
+    mutationFn: async () => {
+      const name = newCategory.trim().replace(/\s+/g, " ");
+      if (!name) throw new Error("Enter a category name");
+      if (categories.some((c) => c.name.toLowerCase() === name.toLowerCase())) throw new Error(`"${name}" already exists`);
+      const { error } = await supabase.from("categories").insert({ name });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Category added");
+      setNewCategory("");
+      void queryClient.invalidateQueries({ queryKey: ["categories"] });
+      void queryClient.invalidateQueries({ queryKey: ["pos-categories"] });
+    },
+    onError: (e: unknown) => toast.error(explainError(e)),
+  });
+
+  const deleteCategory = useMutation({
+    mutationFn: async (id: string) => {
+      // only ever delete a category that has no menu items
+      const { count, error: countError } = await supabase
+        .from("products")
+        .select("id", { count: "exact", head: true })
+        .eq("category_id", id);
+      if (countError) throw countError;
+      if ((count ?? 0) > 0) throw new Error("This category still has menu items. Move or delete them first.");
+      const { error } = await supabase.from("categories").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast.success("Category removed");
+      setCategoryFilter("all");
+      void queryClient.invalidateQueries({ queryKey: ["categories"] });
+      void queryClient.invalidateQueries({ queryKey: ["pos-categories"] });
+    },
+    onError: (e: unknown) => toast.error(explainError(e)),
+  });
+
+  const itemCountByCategory = new Map<string, number>();
+  for (const p of items) if (p.category_id) itemCountByCategory.set(p.category_id, (itemCountByCategory.get(p.category_id) ?? 0) + 1);
+  const emptyCategories = categories.filter((c) => !itemCountByCategory.get(c.id));
+
   const toggleAvailable = useMutation({
     mutationFn: async ({ id, is_active }: { id: string; is_active: boolean }) => {
       const { error } = await supabase.from("products").update({ is_active }).eq("id", id);
@@ -166,9 +210,14 @@ function MenuPage() {
         description={`${items.length} dishes & drinks · ${available} available at the counter.`}
         actions={
           me?.isManager ? (
-            <Button onClick={openNew}>
-              <Plus className="size-4" /> Add menu item
-            </Button>
+            <>
+              <Button variant="outline" onClick={() => setCatsOpen(true)}>
+                <Tags className="size-4" /> Categories
+              </Button>
+              <Button onClick={openNew}>
+                <Plus className="size-4" /> Add menu item
+              </Button>
+            </>
           ) : null
         }
       />
@@ -258,6 +307,63 @@ function MenuPage() {
           Stock.
         </p>
       </div>
+
+      <Dialog open={catsOpen} onOpenChange={setCatsOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Menu categories</DialogTitle>
+            <DialogDescription>Add categories, or delete the ones that have no items.</DialogDescription>
+          </DialogHeader>
+          <form
+            className="flex gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (newCategory.trim() && !addCategory.isPending) addCategory.mutate();
+            }}
+          >
+            <Input value={newCategory} placeholder="New category name" onChange={(e) => setNewCategory(e.target.value)} />
+            <Button type="submit" disabled={!newCategory.trim() || addCategory.isPending}>
+              <Plus className="size-4" /> Add
+            </Button>
+          </form>
+          <div className="max-h-72 divide-y divide-border overflow-auto rounded-md border border-border">
+            {categories.map((c) => {
+              const n = itemCountByCategory.get(c.id) ?? 0;
+              return (
+                <div key={c.id} className="flex items-center justify-between gap-2 px-3 py-2 text-sm">
+                  <span>
+                    {c.name} <span className="text-xs text-muted-foreground">· {n} item{n === 1 ? "" : "s"}</span>
+                  </span>
+                  {n === 0 && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-destructive hover:text-destructive"
+                      disabled={deleteCategory.isPending}
+                      onClick={() => deleteCategory.mutate(c.id)}
+                    >
+                      <Trash2 className="size-4" /> Delete
+                    </Button>
+                  )}
+                </div>
+              );
+            })}
+            {!categories.length && <p className="px-3 py-6 text-center text-sm text-muted-foreground">No categories yet.</p>}
+          </div>
+          {emptyCategories.length > 1 && (
+            <Button
+              variant="outline"
+              className="text-destructive hover:text-destructive"
+              disabled={deleteCategory.isPending}
+              onClick={async () => {
+                for (const c of emptyCategories) await deleteCategory.mutateAsync(c.id).catch(() => undefined);
+              }}
+            >
+              <Trash2 className="size-4" /> Delete all {emptyCategories.length} empty categories
+            </Button>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[90vh] max-w-xl overflow-auto">

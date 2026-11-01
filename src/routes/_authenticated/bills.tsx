@@ -16,8 +16,7 @@ import { downloadCsv } from "@/lib/csv";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { endOfDay, formatCurrency, formatDateTime, formatNumber, isoDate, parseISODate, startOfDay } from "@/lib/format";
 import { fetchSettings, readCachedSettings } from "@/services/settingsService";
-import { buildReceiptText } from "@/lib/receipt";
-import { printReceiptText } from "@/lib/printReceiptDocument";
+import { printSlip } from "@/services/printing";
 import type { ReceiptData } from "@/types";
 
 export const Route = createFileRoute("/_authenticated/bills")({
@@ -162,14 +161,11 @@ function OrdersPage() {
       shop: settings.shop,
       footer: settings.invoice.footer,
     };
-    const width = Number(settings.invoice.receiptWidth) === 80 ? 80 : 58;
-    const text = buildReceiptText(receipt, width === 80 ? 42 : 32);
-    const ok = printReceiptText(text, {
-      title: receipt.invoiceNumber,
-      widthMm: width as 58 | 80,
-      logoUrl: settings.shop.logoUrl,
+    void printSlip(receipt, settings, { kot: false }).then((res) => {
+      if (res.ok && !res.usedFallback) toast.success(res.message);
+      else if (res.ok) toast.message(res.message);
+      else toast.error(res.message);
     });
-    if (!ok) toast.error("Printing was blocked by the browser. Allow pop-ups and try again.");
   }
 
   const shownOrders = orders.filter((o) => status === "all" || o.status === status);

@@ -24,9 +24,9 @@ import { PageHeader } from "@/components/AppShell";
 import { computeBill, type CartLineInput, type DiscountType } from "@/lib/tax";
 import { formatCurrency } from "@/lib/format";
 import { fetchSettings, readCachedSettings } from "@/services/settingsService";
-import { buildReceiptText } from "@/lib/receipt";
-import { printReceiptText } from "@/lib/printReceiptDocument";
-import { printReceipt } from "@/services/printerService";
+import { buildSlipBlocks, columnsFor } from "@/lib/receiptLayout";
+import { ReceiptPreview } from "@/components/ReceiptPreview";
+import { paperWidth, printSlip } from "@/services/printing";
 import type { PaymentMethod, PaymentSplit, ReceiptData } from "@/types";
 
 export const Route = createFileRoute("/_authenticated/pos")({
@@ -63,6 +63,7 @@ function PosPage() {
   const [orderOpen, setOrderOpen] = useState(false);
   const [category, setCategory] = useState<string>("all");
   const [quickOpen, setQuickOpen] = useState(false);
+  const [tableNo, setTableNo] = useState("");
   const [quick, setQuick] = useState({ name: "", price: "", gst: "5", categoryId: "none" });
 
   const { data: settings = readCachedSettings() } = useQuery({
@@ -177,6 +178,7 @@ function PosPage() {
     setPayments([]);
     setBillDiscountValue(0);
     setCustomerId("walk-in");
+    setTableNo("");
   }
 
   const checkout = useMutation({
@@ -189,6 +191,7 @@ function PosPage() {
       const payload = {
         customerId: customerId === "walk-in" ? null : customerId,
         customerName: customer?.name ?? "Walk-in",
+        notes: tableNo.trim() ? `Table ${tableNo.trim()}` : null,
         cashierName: me?.fullName ?? "Cashier",
         paymentMethod: list.some((p) => p.method === "credit") ? "credit" : primary,
         items: bill.lines.map((l) => ({
@@ -233,6 +236,7 @@ function PosPage() {
         cashierName: me?.fullName ?? "Cashier",
         customerName: customer?.name ?? null,
         customerGstin: customer?.gstin ?? null,
+        tableNo: tableNo.trim() || null,
         items: bill.lines.map((l) => ({
           name: l.name,
           quantity: l.quantity,
@@ -262,6 +266,12 @@ function PosPage() {
       };
       setReceipt(data);
       toast.success(`Bill ${result.invoice_number} saved`);
+      if (settings.printer.autoPrint) {
+        void printSlip(data, settings).then((res) => {
+          if (res.ok) toast.success(res.message);
+          else toast.error(res.message);
+        });
+      }
       void queryClient.invalidateQueries();
       resetBill();
       setOrderOpen(false);
@@ -464,6 +474,16 @@ function PosPage() {
           );
         })}
       </div>
+
+          <div className="space-y-1">
+            <Label>Table / token no. (shown on bill and KOT)</Label>
+            <Input
+              value={tableNo}
+              maxLength={12}
+              placeholder="e.g. 5 or T12"
+              onChange={(e) => setTableNo(e.target.value)}
+            />
+          </div>
 
           <div className="space-y-1">
             <Label>Customer</Label>
@@ -795,42 +815,24 @@ function PosPage() {
           </DialogHeader>
           {receipt && (
             <>
-              {receipt.shop.logoUrl ? (
-                <img
-                  src={receipt.shop.logoUrl}
-                  alt={`${receipt.shop.name} logo`}
-                  className="mx-auto max-h-24 max-w-full object-contain"
-                />
-              ) : null}
-              <pre
-                id="receipt-print"
-                className="max-h-[55vh] overflow-auto rounded-md bg-muted p-3 font-mono text-[11px] leading-tight"
-              >
-                {buildReceiptText(receipt, Number(settings.invoice.receiptWidth) === 80 ? 42 : 32)}
-              </pre>
+              <ReceiptPreview
+                cols={columnsFor(paperWidth(settings))}
+                blocks={buildSlipBlocks(receipt, {
+                  cols: columnsFor(paperWidth(settings)),
+                  kot: settings.printer.printKot !== false,
+                })}
+              />
               <div className="flex gap-2">
                 <Button
                   className="flex-1"
                   onClick={async () => {
-                    const width = Number(settings.invoice.receiptWidth) === 80 ? 80 : 58;
-                    const text = buildReceiptText(receipt, width === 80 ? 42 : 32);
-                    if (settings.printer.type === "thermal") {
-                      const res = await printReceipt(receipt, settings.printer);
-                      if (res.ok) {
-                        toast.success(res.message);
-                        return;
-                      }
-                      toast.message(res.message, { description: "Using the device print dialog instead." });
-                    }
-                    const ok = printReceiptText(text, {
-                      title: receipt.invoiceNumber,
-                      widthMm: width as 58 | 80,
-                      logoUrl: receipt.shop.logoUrl,
-                    });
-                    if (!ok) toast.error("Printing was blocked by the browser. Allow pop-ups and try again.");
+                    const res = await printSlip(receipt, settings);
+                    if (res.ok && !res.usedFallback) toast.success(res.message);
+                    else if (res.ok) toast.message(res.message);
+                    else toast.error(res.message);
                   }}
                 >
-                  <Printer className="size-4" /> Print
+                  <Printer className="size-4" /> Print bill{settings.printer.printKot !== false ? " + KOT" : ""}
                 </Button>
                 <Button variant="outline" className="flex-1" onClick={() => setReceipt(null)}>
                   New bill

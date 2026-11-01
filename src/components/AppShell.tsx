@@ -18,7 +18,8 @@ import {
   UtensilsCrossed,
   Wallet,
 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { tryAutoReconnect } from "@/services/bluetoothPrinter";
 import { supabase } from "@/integrations/supabase/client";
 import { useMyProfile } from "@/hooks/useAuthUser";
 import { useTheme } from "@/hooks/useTheme";
@@ -55,6 +56,11 @@ export function AppShell({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const { theme, toggle } = useTheme();
   const [moreOpen, setMoreOpen] = useState(false);
+
+  // keep the paired Bluetooth printer connected: reconnect quietly when the app opens
+  useEffect(() => {
+    void tryAutoReconnect();
+  }, []);
 
   const visible = NAV.filter((item) => {
     if (item.level === "all") return true;

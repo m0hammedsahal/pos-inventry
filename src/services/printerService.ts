@@ -9,7 +9,8 @@
  * is never lost because of a printer problem.
  */
 import type { PrinterSettings, ReceiptData } from "@/types";
-import { buildReceiptText } from "@/lib/receipt";
+import { blocksToPlainText, buildSlipBlocks, columnsFor } from "@/lib/receiptLayout";
+import { getBluetoothState } from "@/services/bluetoothPrinter";
 
 export type PrinterState = "online" | "offline" | "unknown";
 
@@ -30,6 +31,13 @@ const timeoutFetch = async (url: string, init: RequestInit = {}, ms = 2500): Pro
 
 export async function getPrinterStatus(settings: PrinterSettings): Promise<PrinterStatus> {
   if (settings.type === "browser") return { state: "online", message: "Browser printing" };
+  if (settings.type === "bluetooth") {
+    const bt = getBluetoothState();
+    if (!bt.supported) return { state: "offline", message: bt.unsupportedReason };
+    return bt.connected
+      ? { state: "online", message: `Connected to ${bt.name}` }
+      : { state: "offline", message: bt.hasSaved ? `${bt.name} is not connected` : "No printer paired yet" };
+  }
   try {
     const res = await timeoutFetch(`${settings.bridgeUrl}/status`);
     if (!res.ok) return { state: "offline", message: "Print service returned an error" };
@@ -52,7 +60,8 @@ export async function printReceipt(
   receipt: ReceiptData,
   settings: PrinterSettings,
 ): Promise<PrintResult> {
-  const text = buildReceiptText(receipt, Number(settings.width) === 80 ? 42 : 32);
+  const cols = columnsFor(Number(settings.width) === 80 ? 80 : 58);
+  const text = blocksToPlainText(buildSlipBlocks(receipt, { cols, kot: settings.printKot !== false }), cols);
 
   if (settings.type === "thermal") {
     try {
