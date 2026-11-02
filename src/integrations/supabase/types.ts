@@ -1257,6 +1257,7 @@ export type Database = {
         Returns: string
       }
       remove_restaurant_member: { Args: { _user_id: string }; Returns: undefined }
+      edit_sale: { Args: { _invoice_id: string; payload: Json }; Returns: Json }
       cancel_expense: {
         Args: { _expense_id: string; _reason: string }
         Returns: undefined

@@ -2,6 +2,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   BarChart3,
+  BookOpen,
   ChefHat,
   ClipboardList,
   LayoutDashboard,
@@ -38,6 +39,7 @@ const NAV = [
   { to: "/customers", label: "Customers", short: "Customers", icon: Users, level: "all" },
   { to: "/purchases", label: "Purchases", short: "Purchases", icon: ClipboardList, level: "manager" },
   { to: "/suppliers", label: "Suppliers", short: "Suppliers", icon: Truck, level: "all" },
+  { to: "/daybook", label: "Day Book", short: "Day Book", icon: BookOpen, level: "manager" },
   { to: "/expenses", label: "Expenses", short: "Expenses", icon: Wallet, level: "manager" },
   { to: "/reports", label: "Reports", short: "Reports", icon: BarChart3, level: "manager" },
   { to: "/users", label: "Staff", short: "Staff", icon: UsersRound, level: "manager" },

@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Download, Printer, X } from "lucide-react";
+import { Download, Pencil, Printer, X } from "lucide-react";
 import { toast } from "sonner";
 import { explainError } from "@/lib/errors";
 import { supabase } from "@/integrations/supabase/client";
@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { DateFilter } from "@/components/DateFilter";
+import { OrderEditor } from "@/components/OrderEditor";
 import { downloadCsv } from "@/lib/csv";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { endOfDay, formatCurrency, formatDateTime, formatNumber, isoDate, parseISODate, startOfDay } from "@/lib/format";
@@ -39,6 +40,7 @@ function OrdersPage() {
   const queryClient = useQueryClient();
   const { data: me } = useMyProfile();
   const [term, setTerm] = useState("");
+  const [editing, setEditing] = useState(false);
   const [range, setRange] = useState<{ from: string; to: string } | null>(null);
   const [status, setStatus] = useState<"all" | "completed" | "cancelled">("all");
   const [openId, setOpenId] = useState<string | null>(null);
@@ -303,6 +305,7 @@ function OrdersPage() {
         open={!!openId}
         onOpenChange={(o) => {
           if (!o) {
+            setEditing(false);
             setOpenId(null);
             setReturnQty({});
           }
@@ -330,6 +333,17 @@ function OrdersPage() {
                 </p>
               )}
 
+              {editing && inv.status === "completed" ? (
+                <OrderEditor
+                  invoice={inv}
+                  items={detailItems}
+                  payments={detailPays}
+                  settings={settings}
+                  onClose={() => setEditing(false)}
+                  onSaved={() => setEditing(false)}
+                />
+              ) : (
+                <>
               <div className="overflow-auto rounded-md border border-border">
                 <table className="w-full">
                   <thead className="bg-muted text-left text-xs uppercase text-muted-foreground">
@@ -416,6 +430,11 @@ function OrdersPage() {
                 <Button variant="outline" onClick={reprint}>
                   <Printer className="size-4" /> Reprint
                 </Button>
+                {me?.isManager && inv.status === "completed" && !detailItems.some((i) => Number(i.returned_qty) > 0) && (
+                  <Button variant="outline" onClick={() => setEditing(true)}>
+                    <Pencil className="size-4" /> Edit order
+                  </Button>
+                )}
                 <Button
                   variant="secondary"
                   disabled={inv.status === "cancelled" || doReturn.isPending}
@@ -429,6 +448,8 @@ function OrdersPage() {
                   </Button>
                 )}
               </div>
+                </>
+              )}
             </div>
           )}
         </DialogContent>
